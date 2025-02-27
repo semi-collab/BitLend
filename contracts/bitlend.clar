@@ -66,12 +66,14 @@
 (define-private (validate-amount (amount uint)) 
     (begin
         (asserts! (> amount u0) ERR-ZERO-AMOUNT)
-        (ok true)))
+        (ok true))
+)
 
 (define-private (check-authorization)
     (begin
         (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-NOT-AUTHORIZED)
-        (ok true)))
+        (ok true))
+)
 
 (define-private (check-protocol-active)
     (begin
@@ -239,3 +241,18 @@
                     true)
                 
                 (ok true)))))
+
+;; Governance Functions
+
+(define-public (update-protocol-fee (new-fee uint))
+    (begin
+        (try! (check-authorization))
+        (asserts! (<= new-fee MAX-FEE-PERCENTAGE) ERR-EXCEED-MAX-FEE)
+        (var-set protocol-fee-percentage new-fee)
+        (ok true)))
+
+(define-public (toggle-protocol-pause)
+    (begin
+        (try! (check-authorization))
+        (var-set protocol-paused (not (var-get protocol-paused)))
+        (ok true)))
