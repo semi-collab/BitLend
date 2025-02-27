@@ -166,3 +166,76 @@
             
             (var-set total-loans (+ (var-get total-loans) amount))
             (ok true))))
+
+(define-public (repay-loan (amount uint))
+    (begin
+        (try! (check-protocol-active))
+        (try! (validate-amount amount))
+        
+        (let (
+            (loan (unwrap! (get-loan tx-sender) ERR-LOAN-NOT-FOUND))
+            (current-borrowed (get borrowed-amount loan))
+        )
+            (asserts! (<= amount current-borrowed) ERR-INVALID-AMOUNT)
+            
+            (let (
+                (blocks-elapsed (- block-height (get last-update loan)))
+                (interest-amount (/ (* current-borrowed (get interest-rate loan) blocks-elapsed) (* u100 u144 u365)))
+                (total-due (+ amount interest-amount))
+            )
+                (try! (stx-transfer? total-due tx-sender (as-contract tx-sender)))
+                
+                ;; Update loan state
+                (if (is-eq amount current-borrowed)
+                    (begin
+                        (map-delete loans { user: tx-sender })
+                        (map-delete borrow-balances { user: tx-sender }))
+                    (begin
+                        (map-set loans 
+                            { user: tx-sender }
+                            {
+                                collateral-amount: (get collateral-amount loan),
+                                borrowed-amount: (- current-borrowed amount),
+                                last-update: block-height,
+                                interest-rate: (get interest-rate loan)
+                            })
+                        (map-set borrow-balances 
+                            { user: tx-sender }
+                            (- (get-borrow-balance tx-sender) amount))))
+                
+                (var-set total-loans (- (var-get total-loans) amount))
+                (ok true)))))
+
+(define-public (liquidate (user principal))
+    (begin
+        (try! (check-protocol-active))
+        
+        (let (
+            (loan (unwrap! (get-loan user) ERR-LOAN-NOT-FOUND))
+            (collateral-ratio (unwrap! (get-current-collateral-ratio user) ERR-LOAN-NOT-FOUND))
+        )
+            (asserts! (is-price-valid) ERR-PRICE-EXPIRED)
+            (asserts! (< collateral-ratio LIQUIDATION-THRESHOLD) ERR-INVALID-LIQUIDATION)
+            
+            (let (
+                (collateral-amount (get collateral-amount loan))
+                (borrowed-amount (get borrowed-amount loan))
+                (liquidation-value (* borrowed-amount (+ u100 LIQUIDATION-PENALTY)))
+                (remaining-collateral (- collateral-amount liquidation-value))
+            )
+                (try! (stx-transfer? liquidation-value tx-sender (as-contract tx-sender)))
+                
+                ;; Clear the loan
+                (map-delete loans { user: user })
+                (map-delete borrow-balances { user: user })
+                
+                ;; Update protocol state
+                (var-set total-loans (- (var-get total-loans) borrowed-amount))
+                (var-set total-collateral (- (var-get total-collateral) collateral-amount))
+                
+                ;; Return remaining collateral to user
+                (if (> remaining-collateral u0)
+                    (try! (as-contract (stx-transfer? remaining-collateral (as-contract tx-sender) user)))
+                    true)
+                
+                (ok true)))))
