@@ -72,3 +72,97 @@
     (begin
         (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-NOT-AUTHORIZED)
         (ok true)))
+
+(define-private (check-protocol-active)
+    (begin
+        (asserts! (not (var-get protocol-paused)) ERR-NOT-AUTHORIZED)
+        (ok true)))
+
+;; Read-Only Functions
+
+(define-read-only (get-loan (user principal))
+    (map-get? loans { user: user }))
+
+(define-read-only (get-collateral-balance (user principal))
+    (default-to u0 (map-get? collateral-balances { user: user })))
+
+(define-read-only (get-borrow-balance (user principal))
+    (default-to u0 (map-get? borrow-balances { user: user })))
+
+(define-read-only (get-current-collateral-ratio (user principal))
+    (let (
+        (loan (get-loan user))
+    )
+        (match loan
+            loan-data (let (
+                (collateral-value (* (get collateral-amount loan-data) (var-get btc-price-in-cents)))
+                (borrowed-value (* (get borrowed-amount loan-data) u100))
+            )
+                (ok (/ (* collateral-value u100) borrowed-value)))
+            (err u0))))
+
+(define-read-only (is-price-valid)
+    (< (- block-height (var-get last-price-update)) PRICE-VALIDITY-PERIOD))
+
+(define-read-only (get-protocol-stats)
+    {
+        total-loans: (var-get total-loans),
+        total-collateral: (var-get total-collateral),
+        current-fee: (var-get protocol-fee-percentage),
+        is-paused: (var-get protocol-paused)
+    })
+
+;; Public Functions
+
+;; Price Oracle Functions
+(define-public (update-btc-price (new-price-in-cents uint))
+    (begin
+        (try! (check-authorization))
+        (try! (validate-amount new-price-in-cents))
+        (var-set btc-price-in-cents new-price-in-cents)
+        (var-set last-price-update block-height)
+        (ok true)))
+
+;; Core Lending Functions
+(define-public (deposit-collateral (amount uint))
+    (begin
+        (try! (check-protocol-active))
+        (try! (validate-amount amount))
+        (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+        
+        (map-set collateral-balances 
+            { user: tx-sender }
+            (+ (get-collateral-balance tx-sender) amount))
+        
+        (var-set total-collateral (+ (var-get total-collateral) amount))
+        (ok true)))
+
+(define-public (borrow (amount uint))
+    (begin
+        (try! (check-protocol-active))
+        (try! (validate-amount amount))
+        
+        (let (
+            (current-collateral (get-collateral-balance tx-sender))
+            (current-loan (get-loan tx-sender))
+            (collateral-value (* current-collateral (var-get btc-price-in-cents)))
+        )
+            (asserts! (is-price-valid) ERR-PRICE-EXPIRED)
+            (asserts! (is-none current-loan) ERR-LOAN-EXISTS)
+            (asserts! (>= (* collateral-value u100) (* amount MIN-COLLATERAL-RATIO)) ERR-BELOW-MIN-COLLATERAL)
+            
+            (map-set loans 
+                { user: tx-sender }
+                {
+                    collateral-amount: current-collateral,
+                    borrowed-amount: amount,
+                    last-update: block-height,
+                    interest-rate: u5 ;; 5% APR
+                })
+            
+            (map-set borrow-balances 
+                { user: tx-sender }
+                (+ (get-borrow-balance tx-sender) amount))
+            
+            (var-set total-loans (+ (var-get total-loans) amount))
+            (ok true))))
