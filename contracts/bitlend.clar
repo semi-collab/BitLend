@@ -78,18 +78,22 @@
 (define-private (check-protocol-active)
     (begin
         (asserts! (not (var-get protocol-paused)) ERR-NOT-AUTHORIZED)
-        (ok true)))
+        (ok true))
+)
 
 ;; Read-Only Functions
 
 (define-read-only (get-loan (user principal))
-    (map-get? loans { user: user }))
+    (map-get? loans { user: user })
+)
 
 (define-read-only (get-collateral-balance (user principal))
-    (default-to u0 (map-get? collateral-balances { user: user })))
+    (default-to u0 (map-get? collateral-balances { user: user }))
+)
 
 (define-read-only (get-borrow-balance (user principal))
-    (default-to u0 (map-get? borrow-balances { user: user })))
+    (default-to u0 (map-get? borrow-balances { user: user }))
+)
 
 (define-read-only (get-current-collateral-ratio (user principal))
     (let (
@@ -101,10 +105,12 @@
                 (borrowed-value (* (get borrowed-amount loan-data) u100))
             )
                 (ok (/ (* collateral-value u100) borrowed-value)))
-            (err u0))))
+            (err u0)))
+)
 
 (define-read-only (is-price-valid)
-    (< (- stacks-block-height (var-get last-price-update)) PRICE-VALIDITY-PERIOD))
+    (< (- stacks-block-height (var-get last-price-update)) PRICE-VALIDITY-PERIOD)
+)
 
 (define-read-only (get-protocol-stats)
     {
@@ -112,7 +118,8 @@
         total-collateral: (var-get total-collateral),
         current-fee: (var-get protocol-fee-percentage),
         is-paused: (var-get protocol-paused)
-    })
+    }
+)
 
 ;; Public Functions
 
@@ -123,7 +130,8 @@
         (try! (validate-amount new-price-in-cents))
         (var-set btc-price-in-cents new-price-in-cents)
         (var-set last-price-update stacks-block-height)
-        (ok true)))
+        (ok true))
+)
 
 ;; Core Lending Functions
 (define-public (deposit-collateral (amount uint))
@@ -137,7 +145,8 @@
             (+ (get-collateral-balance tx-sender) amount))
         
         (var-set total-collateral (+ (var-get total-collateral) amount))
-        (ok true)))
+        (ok true))
+)
 
 (define-public (borrow (amount uint))
     (begin
@@ -167,7 +176,8 @@
                 (+ (get-borrow-balance tx-sender) amount))
             
             (var-set total-loans (+ (var-get total-loans) amount))
-            (ok true))))
+            (ok true)))
+)
 
 (define-public (repay-loan (amount uint))
     (begin
@@ -206,7 +216,8 @@
                             (- (get-borrow-balance tx-sender) amount))))
                 
                 (var-set total-loans (- (var-get total-loans) amount))
-                (ok true)))))
+                (ok true))))
+)
 
 (define-public (liquidate (user principal))
     (begin
@@ -240,7 +251,8 @@
                     (try! (as-contract (stx-transfer? remaining-collateral (as-contract tx-sender) user)))
                     true)
                 
-                (ok true)))))
+                (ok true))))
+)
 
 ;; Governance Functions
 
@@ -249,10 +261,12 @@
         (try! (check-authorization))
         (asserts! (<= new-fee MAX-FEE-PERCENTAGE) ERR-EXCEED-MAX-FEE)
         (var-set protocol-fee-percentage new-fee)
-        (ok true)))
+        (ok true))
+)
 
 (define-public (toggle-protocol-pause)
     (begin
         (try! (check-authorization))
         (var-set protocol-paused (not (var-get protocol-paused)))
-        (ok true)))
+        (ok true))
+)
