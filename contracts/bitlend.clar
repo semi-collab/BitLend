@@ -104,7 +104,7 @@
             (err u0))))
 
 (define-read-only (is-price-valid)
-    (< (- block-height (var-get last-price-update)) PRICE-VALIDITY-PERIOD))
+    (< (- stacks-block-height (var-get last-price-update)) PRICE-VALIDITY-PERIOD))
 
 (define-read-only (get-protocol-stats)
     {
@@ -122,7 +122,7 @@
         (try! (check-authorization))
         (try! (validate-amount new-price-in-cents))
         (var-set btc-price-in-cents new-price-in-cents)
-        (var-set last-price-update block-height)
+        (var-set last-price-update stacks-block-height)
         (ok true)))
 
 ;; Core Lending Functions
@@ -158,7 +158,7 @@
                 {
                     collateral-amount: current-collateral,
                     borrowed-amount: amount,
-                    last-update: block-height,
+                    last-update: stacks-block-height,
                     interest-rate: u5 ;; 5% APR
                 })
             
@@ -181,7 +181,7 @@
             (asserts! (<= amount current-borrowed) ERR-INVALID-AMOUNT)
             
             (let (
-                (blocks-elapsed (- block-height (get last-update loan)))
+                (blocks-elapsed (- stacks-block-height (get last-update loan)))
                 (interest-amount (/ (* current-borrowed (get interest-rate loan) blocks-elapsed) (* u100 u144 u365)))
                 (total-due (+ amount interest-amount))
             )
@@ -198,7 +198,7 @@
                             {
                                 collateral-amount: (get collateral-amount loan),
                                 borrowed-amount: (- current-borrowed amount),
-                                last-update: block-height,
+                                last-update: stacks-block-height,
                                 interest-rate: (get interest-rate loan)
                             })
                         (map-set borrow-balances 
